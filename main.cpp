@@ -89,12 +89,15 @@ int main( int argc, char** argv )
 {
   try
     {
-        VideoCapture cap;
-        if (argc < 2) {
-            cap.open(0);
-        }else{
-            cap.open(argv[1]);
-        }
+       // VideoCapture cap;
+                //cv::VideoCapture cap("G:/_PROJECTS/2_Inprogress/6-2-PhotoBooth/detect-face-parts/1.mpeg");
+                cv::VideoCapture cap("./1.mpeg");
+
+//        if (argc < 2) {
+//            cap.open(0);
+//        }else{
+//            cap.open(argv[1]);
+//        }
 
         if (!cap.isOpened())
         {
@@ -105,13 +108,13 @@ int main( int argc, char** argv )
 
         int frame_width=   cap.get(CV_CAP_PROP_FRAME_WIDTH);
         int frame_height=   cap.get(CV_CAP_PROP_FRAME_HEIGHT);
-        VideoWriter video("../PhotoBooth/data/out.avi",CV_FOURCC('M','J','P','G'),10, Size(frame_width,frame_height),true);
+        VideoWriter video("./out.avi",CV_FOURCC('M','J','P','G'),10, Size(frame_width,frame_height),true);
 
         // Load face detection and pose estimation models.
         frontal_face_detector detector = get_frontal_face_detector();
         shape_predictor pose_model;
 
-        deserialize("../PhotoBooth/data/shape_predictor_68_face_landmarks.dat") >> pose_model;
+        deserialize("./shape_predictor_68_face_landmarks.dat") >> pose_model;
         int count =0;
         Scalar lo( 50, 116, 114, 0);
         // Grab and process frames until the main window is closed by the user.
