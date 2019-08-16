@@ -12,27 +12,59 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/opencv.hpp"
-
-using std::string;
+#include <opencv2/video/video.hpp>
+#include <iostream>
+#include <string>
 
 #define FACE_DOWNSAMPLE_RATIO 2
 #define SKIP_FRAMES 2
 
 using namespace dlib;
 using namespace std;
+using namespace cv;
 
-void draw_polyline(cv::Mat &img, const dlib::full_object_detection& d, const int start, const int end, cv::Scalar color , bool isClosed = false)
+Mat removeBackground(Mat frame, Scalar lo)
 {
-    std::vector <cv::Point> points;
+    Mat im_bgr =frame ,im_hsv,input_bgra;
+
+    //Scalar lo( 45, 100, 60, 0); // mean-var for low
+    Scalar hi(82, 255, 255, 255); // mean + var for high
+
+    if (im_bgr.empty()) return im_bgr;
+
+    cvtColor(im_bgr, im_hsv, COLOR_BGR2HSV);
+    blur(im_hsv, im_hsv, Size(1,1));
+
+    Mat mask;
+    inRange(im_hsv, lo, hi, mask);
+    im_bgr.setTo(Scalar(255,255,255, 0), mask); // i used yellow, to make it more visible.
+
+    cvtColor(im_bgr, input_bgra, CV_BGR2BGRA);
+    for (int y = 0; y < input_bgra.rows; ++y)
+    for (int x = 0; x < input_bgra.cols; ++x)
+    {
+        Vec4b & pixel = input_bgra.at<Vec4b>(y, x);
+        // if pixel is white
+        if (pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255) {
+            pixel[3] = 0;
+        }
+    }
+
+    return input_bgra;
+}
+
+void draw_polyline(Mat &img, const dlib::full_object_detection& d, const int start, const int end, Scalar color , bool isClosed = false)
+{
+    std::vector <Point> points;
     for (int i = start; i <= end; ++i)
     {
-        points.push_back(cv::Point(d.part(i).x(), d.part(i).y()));
+        points.push_back(Point(d.part(i).x(), d.part(i).y()));
     }
-    cv::polylines(img, points, isClosed, color, 2, 16);
+    polylines(img, points, isClosed, color, 2, 16);
 
 }
 
-cv::Mat render_face (cv::Mat &img, const dlib::full_object_detection& d)
+Mat render_face (Mat &img, const dlib::full_object_detection& d)
 {
     DLIB_CASSERT
     (
@@ -41,55 +73,62 @@ cv::Mat render_face (cv::Mat &img, const dlib::full_object_detection& d)
      << "\n\t d.num_parts():  " << d.num_parts()
      );
 
-  //  draw_polyline(img, d, 0, 16, cv::Scalar(255,0,0));           // Jaw line
-    draw_polyline(img, d, 17, 21, cv::Scalar(0,0,0));          // Left eyebrow
-    draw_polyline(img, d, 22, 26, cv::Scalar(0,0,0));          // Right eyebrow
-    draw_polyline(img, d, 27, 30, cv::Scalar(255,0,0));          // Nose bridge
-    draw_polyline(img, d, 30, 35, cv::Scalar(255,0,0), true);    // Lower nose
-    draw_polyline(img, d, 36, 41, cv::Scalar(255,255,255), true);    // Left eye
-    draw_polyline(img, d, 42, 47, cv::Scalar(255,255,255), true);    // Right Eye
-    draw_polyline(img, d, 48, 59, cv::Scalar(0,0,255), true);    // Outer lip
-    draw_polyline(img, d, 60, 67, cv::Scalar(0,0,255), true);    // Inner lip
+  //  draw_polyline(img, d, 0, 16, Scalar(255,0,0));           // Jaw line
+    draw_polyline(img, d, 17, 21, Scalar(0,0,0));          // Left eyebrow
+    draw_polyline(img, d, 22, 26, Scalar(0,0,0));          // Right eyebrow
+    draw_polyline(img, d, 27, 30, Scalar(255,0,0));          // Nose bridge
+    draw_polyline(img, d, 30, 35, Scalar(255,0,0), true);    // Lower nose
+    draw_polyline(img, d, 36, 41, Scalar(255,255,255), true);    // Left eye
+    draw_polyline(img, d, 42, 47, Scalar(255,255,255), true);    // Right Eye
+    draw_polyline(img, d, 48, 59, Scalar(0,0,255), true);    // Outer lip
+    draw_polyline(img, d, 60, 67, Scalar(0,0,255), true);    // Inner lip
     return img;
 }
 
-int main()
+int main( int argc, char** argv )
 {
   try
     {
-        //cv::VideoCapture cap("G:/_PROJECTS/2_Inprogress/6-2-PhotoBooth/detect-face-parts/1.mpeg");
-        cv::VideoCapture cap("./1.mpeg");
+        VideoCapture cap;
+        if (argc < 2) {
+            cap.open(0);
+        }else{
+            cap.open(argv[1]);
+        }
+
         if (!cap.isOpened())
         {
-            cerr << "Unable to connect to camera" << endl;
+            cerr << "Unable to connect to camera or video" << endl;
+            cerr << "Usage: PhotoBooth [file]" << endl;
             return 1;
         }
 
         int frame_width=   cap.get(CV_CAP_PROP_FRAME_WIDTH);
         int frame_height=   cap.get(CV_CAP_PROP_FRAME_HEIGHT);
-        cv::VideoWriter video("out.avi",CV_FOURCC('M','J','P','G'),10, cv::Size(frame_width,frame_height),true);
+        VideoWriter video("../PhotoBooth/data/out.avi",CV_FOURCC('M','J','P','G'),10, Size(frame_width,frame_height),true);
 
         // Load face detection and pose estimation models.
         frontal_face_detector detector = get_frontal_face_detector();
         shape_predictor pose_model;
 
-        deserialize("./shape_predictor_68_face_landmarks.dat") >> pose_model;
+        deserialize("../PhotoBooth/data/shape_predictor_68_face_landmarks.dat") >> pose_model;
         int count =0;
+        Scalar lo( 50, 116, 114, 0);
         // Grab and process frames until the main window is closed by the user.
 
         while(true)
         {
             // Grab a frame
-            cv::Mat temp;
+            Mat temp;
             cap >> temp;
             if (!temp.data) break;
 
-            cv::Mat im_small, greyMat;
+            Mat im_small, greyMat;
 
             // Resize image for face detection
-            cv::resize(temp, im_small, cv::Size(), 1.0/FACE_DOWNSAMPLE_RATIO, 1.0/FACE_DOWNSAMPLE_RATIO);
+            resize(temp, im_small, Size(), 1.0/FACE_DOWNSAMPLE_RATIO, 1.0/FACE_DOWNSAMPLE_RATIO);
 
-            cv::cvtColor(im_small, greyMat, cv::COLOR_BGR2GRAY);
+            cvtColor(im_small, greyMat, COLOR_BGR2GRAY);
 
             // Change to dlib's image format. No memory is copied.
             cv_image<bgr_pixel> cimg_small(im_small);
@@ -101,7 +140,7 @@ int main()
             // contain dangling pointers.  This basically means you shouldn't modify temp
             // while using cimg.
             cv_image<bgr_pixel> cimg(temp);
-            std::vector<rectangle> faces;
+            std::vector<dlib::rectangle> faces;
             // Detect faces
 
             // Detect faces on resize image
@@ -113,7 +152,7 @@ int main()
                 std::vector<full_object_detection> shapes;
                 for (unsigned long i = 0; i < faces.size(); ++i){
                     // Resize obtained rectangle for full resolution image.
-                     rectangle r(
+                     dlib::rectangle r(
                                    (long)(faces[i].left() * FACE_DOWNSAMPLE_RATIO),
                                    (long)(faces[i].top() * FACE_DOWNSAMPLE_RATIO),
                                    (long)(faces[i].right() * FACE_DOWNSAMPLE_RATIO),
@@ -124,9 +163,11 @@ int main()
                     temp = render_face(temp, shapes[i]);
                 }
                 cout<<"shapes:"<<shapes.size()<<endl;
-                imshow("vidoe",temp);
+                temp = removeBackground(temp,lo);
+                imshow("PhotoBooth",temp);
                 video.write(temp);
-                cv::waitKey(10);
+                int key = waitKey(10);
+                if (key == 27) break;
             }
         }
     }
